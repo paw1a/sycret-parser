@@ -34,6 +34,11 @@ func DocEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if docRequest.RecordID == "" || docRequest.URLTemplate == "" {
+		errorResponse(w, ErrInvalidBody, http.StatusBadRequest)
+		return
+	}
+
 	docData, err := api.GetDocument(docRequest.URLTemplate)
 	if err != nil {
 		errorResponse(w, err, http.StatusInternalServerError)
