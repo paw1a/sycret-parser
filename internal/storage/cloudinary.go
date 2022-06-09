@@ -6,13 +6,11 @@ import (
 	"errors"
 	"github.com/cloudinary/cloudinary-go"
 	"github.com/cloudinary/cloudinary-go/api/uploader"
+	"github.com/spf13/viper"
 )
 
 const (
-	CloudName   = "miragost"
-	CloudKey    = "535661528615272"
-	CloudSecret = "aHyZLIYT5rpMmkUljmewhfZlpuk"
-	FolderName  = "sycret"
+	FolderName = "sycret"
 )
 
 var (
@@ -21,7 +19,8 @@ var (
 )
 
 func UploadDocument(docData []byte, filename string) (string, error) {
-	var cld, err = cloudinary.NewFromParams(CloudName, CloudKey, CloudSecret)
+	var cld, err = cloudinary.NewFromParams(viper.GetString("cloud_name"),
+		viper.GetString("cloud_key"), viper.GetString("cloud_secret"))
 	if err != nil {
 		return "", ErrInitCloud
 	}
