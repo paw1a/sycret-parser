@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -45,6 +46,11 @@ func TestHandler_DocEndpoint(t *testing.T) {
 			expectedStatusCode: http.StatusInternalServerError,
 		},
 	}
+
+	viper.AddConfigPath("../../config")
+	viper.SetConfigName("config")
+	err := viper.ReadInConfig()
+	assert.Nil(t, err)
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
