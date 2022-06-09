@@ -15,6 +15,8 @@ func Run() {
 
 	http.HandleFunc("/api/doc", handler.DocEndpoint)
 
+	log.Printf("server start on port: %d", viper.GetInt("port"))
+
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d",
 		viper.GetInt("port")), nil))
 }
