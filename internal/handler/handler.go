@@ -3,9 +3,12 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/paw1a/sycret-parser/internal/api"
 	"github.com/paw1a/sycret-parser/internal/doc"
+	"github.com/paw1a/sycret-parser/internal/storage"
 	"net/http"
+	"time"
 )
 
 var (
@@ -36,9 +39,14 @@ func DocEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = doc.GenerateDoc(docData, docRequest.RecordID)
+	resultDoc, err := doc.GenerateDoc(docData, docRequest.RecordID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	filename := fmt.Sprintf("%s.doc",
+		time.Now().Format("2006-01-02 15-04-05"))
+
+	_, err = storage.UploadDocument(resultDoc, filename)
 }
