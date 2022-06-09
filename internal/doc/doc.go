@@ -3,22 +3,29 @@ package doc
 import (
 	"fmt"
 	"github.com/beevik/etree"
-	"os"
+	"github.com/paw1a/sycret-parser/internal/api"
+	"time"
 )
 
-func GenerateDoc(docFile *os.File) (*os.File, error) {
+func GenerateDoc(docData []byte, recordID string) (string, error) {
 	docTree := etree.NewDocument()
 
-	if _, err := docTree.ReadFrom(docFile); err != nil {
+	if err := docTree.ReadFromBytes(docData); err != nil {
 		panic(err)
 	}
 
 	for _, elem := range docTree.FindElements("//text") {
 		attr := elem.SelectAttr("field").Value
 		textElem := elem.SelectElement("r").SelectElement("t")
-		textElem.SetText(fmt.Sprintf("%s ", attr))
+		newText, err := api.GetUserField(attr, recordID)
+		if err != nil {
+			return "", err
+		}
+		textElem.SetText(fmt.Sprintf("%s ", newText))
 	}
-	docTree.WriteToFile("out.doc")
 
-	return docFile, nil
+	filename := time.Now().Format("2006-01-02 15-04-05")
+	docTree.WriteToFile(fmt.Sprintf("%s.doc", filename))
+
+	return filename, nil
 }
