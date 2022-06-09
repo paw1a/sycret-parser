@@ -7,6 +7,7 @@ import (
 	"github.com/paw1a/sycret-parser/internal/api"
 	"github.com/paw1a/sycret-parser/internal/doc"
 	"github.com/paw1a/sycret-parser/internal/storage"
+	"log"
 	"net/http"
 	"time"
 )
@@ -29,19 +30,19 @@ func DocEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&docRequest); err != nil {
-		http.Error(w, ErrInvalidBody.Error(), http.StatusBadRequest)
+		errorResponse(w, ErrInvalidBody, http.StatusBadRequest)
 		return
 	}
 
 	docData, err := api.GetDocument(docRequest.URLTemplate)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		errorResponse(w, err, http.StatusInternalServerError)
 		return
 	}
 
 	resultDoc, err := doc.GenerateDoc(docData, docRequest.RecordID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		errorResponse(w, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -50,11 +51,16 @@ func DocEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	url, err := storage.UploadDocument(resultDoc, filename)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		errorResponse(w, err, http.StatusInternalServerError)
 		return
 	}
 
 	docResponse := DocParserResponse{URLWord: url}
 	w.Header().Set("Content-Type", "application/json")
 	err = json.NewEncoder(w).Encode(docResponse)
+}
+
+func errorResponse(w http.ResponseWriter, err error, statusCode int) {
+	log.Printf("error with code %d: %v", statusCode, err)
+	http.Error(w, err.Error(), statusCode)
 }
