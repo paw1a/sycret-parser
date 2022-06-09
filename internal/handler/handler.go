@@ -1,9 +1,12 @@
 package handler
 
 import (
-	"fmt"
-	"github.com/beevik/etree"
+	"encoding/json"
+	"github.com/paw1a/sycret-parser/internal/doc"
+	"io"
+	"io/ioutil"
 	"net/http"
+	"os"
 )
 
 type SycretAPIRequest struct {
@@ -27,16 +30,44 @@ type DocParserResponse struct {
 }
 
 func DocEndpoint(w http.ResponseWriter, r *http.Request) {
-	doc := etree.NewDocument()
+	var docRequest DocParserRequest
 
-	if err := doc.ReadFromFile("forma_025u.doc"); err != nil {
-		panic(err)
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&docRequest); err != nil {
+		http.Error(w, ErrInvalidBody.Error(), http.StatusBadRequest)
+		return
 	}
 
-	for _, elem := range doc.FindElements("//text") {
-		attr := elem.SelectAttr("field").Value
-		textElem := elem.SelectElement("r").SelectElement("t")
-		textElem.SetText(fmt.Sprintf("%s ", attr))
+	docFile, err := apiCall(docRequest)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	doc.WriteToFile("out.doc")
+
+	_, err = doc.GenerateDoc(docFile)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func apiCall(docRequest DocParserRequest) (*os.File, error) {
+	resp, err := http.Get(docRequest.URLTemplate)
+	if err != nil {
+		return nil, ErrFailedAPICall
+	}
+	defer resp.Body.Close()
+
+	file, err := ioutil.TempFile("sycret", "sycret.*.doc")
+	if err != nil {
+		return nil, ErrCreateFile
+	}
+	defer os.Remove(file.Name())
+
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		return nil, ErrCopyDocFile
+	}
+
+	return file, nil
 }
