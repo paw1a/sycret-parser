@@ -19,7 +19,7 @@ func TestHandler_DocEndpoint(t *testing.T) {
 		{
 			name: "Ok",
 			inputBody: `{
-									"URLTemplate": "https://sycret.ru/service/apigendoc/forma_025u.doc", 
+									"URLTemplate": "https://sycret.ru/service/apigendoc/forma_025u.xml", 
 									"RecordID": "20"}`,
 			expectedStatusCode: http.StatusOK,
 		},
@@ -30,7 +30,7 @@ func TestHandler_DocEndpoint(t *testing.T) {
 		},
 		{
 			name:               "Bad request (no record)",
-			inputBody:          `{"URLTemplate": "https://sycret.ru/service/apigendoc/forma_025u.doc"}`,
+			inputBody:          `{"URLTemplate": "https://sycret.ru/service/apigendoc/forma_025u.xml"}`,
 			expectedStatusCode: http.StatusBadRequest,
 		},
 		{
