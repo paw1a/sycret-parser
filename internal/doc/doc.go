@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/beevik/etree"
 	"github.com/jmoiron/sqlx"
-	"github.com/paw1a/sycret-parser/internal/api"
+	"github.com/paw1a/sycret-parser/internal/db"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/transform"
 	"io/ioutil"
@@ -17,27 +17,71 @@ var (
 	ErrReadDocData = errors.New("failed to read doc data")
 )
 
-func GenerateDoc(docData []byte, recordID string) ([]byte, error) {
+func GenerateDoc(docData []byte, recordID string, conn *sqlx.DB) ([]byte, error) {
 	docTree := etree.NewDocument()
-
 	if err := docTree.ReadFromBytes(docData); err != nil {
 		return nil, ErrReadDocData
 	}
 
-	for _, elem := range docTree.FindElements("//text") {
-		fieldValue := elem.SelectAttr("field").Value
-		textElem := elem.SelectElement("r").SelectElement("t")
+	rootUse := docTree.FindElement("//use")
+	if rootUse == nil {
+		return nil, fmt.Errorf("no root use in document")
+	}
 
-		newText, err := api.GetUserField(fieldValue, recordID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate doc: %v", err)
-		}
+	table := rootUse.SelectAttr("table")
+	if table == nil {
+		return nil, fmt.Errorf("no table attr in root USE tag")
+	}
 
-		textElem.SetText(fmt.Sprintf("%s ", newText))
+	queryString := fmt.Sprintf("select * from %s where id=?", table.Value)
+
+	rows, err := conn.Query(queryString, recordID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed select for root USE tag")
+	}
+
+	objects, err := db.ScanSelectRows(rows)
+	if err != nil {
+		return nil, fmt.Errorf("root USE tag: %v", err)
+	}
+
+	if len(objects) > 1 {
+		return nil, fmt.Errorf("multiple root use tags")
+	}
+
+	err = recursiveParse(rootUse, objects[0], conn)
+	if err != nil {
+		return nil, err
 	}
 
 	return docTree.WriteToBytes()
 }
+
+//func GenerateDoc(docData []byte, recordID string, conn *sqlx.DB) ([]byte, error) {
+//	docTree := etree.NewDocument()
+//
+//	if err := docTree.ReadFromBytes(docData); err != nil {
+//		return nil, ErrReadDocData
+//	}
+//
+//	for _, elem := range docTree.FindElements("//text") {
+//		fieldValue := elem.SelectAttr("field").Value
+//		textElem := elem.SelectElement("r").SelectElement("t")
+//
+//		newText, err := api.GetUserField(fieldValue, recordID)
+//		if err != nil {
+//			return nil, fmt.Errorf("failed to generate doc: %v", err)
+//		}
+//
+//		textElem.SetText(fmt.Sprintf("%s ", newText))
+//	}
+//
+//	return docTree.WriteToBytes()
+//}
 
 //func Generate(docData []byte, recordID string) ([]byte, error) {
 //	docTree := etree.NewDocument()
@@ -65,84 +109,30 @@ func GenerateDoc(docData []byte, recordID string) ([]byte, error) {
 //	}
 //}
 
-func Generate(docData []byte, recordID string, conn *sqlx.DB) ([]byte, error) {
-	docTree := etree.NewDocument()
-
-	if err := docTree.ReadFromBytes(docData); err != nil {
-		return nil, ErrReadDocData
-	}
-
-	rootUse := docTree.FindElement("//use")
-	table := rootUse.SelectAttr("table")
-
-	if table == nil {
-		return nil, fmt.Errorf("no table attr in root USE tag")
-	}
-
-	queryString := fmt.Sprintf("select * from %s where id=?", table.Value)
-	rows, err := conn.Query(queryString, recordID)
-	if err != nil {
-		return nil, err
-	}
-	cols, _ := rows.Columns()
-
-	if err != nil {
-		return nil, fmt.Errorf("failed select for root USE tag")
-	}
-
-	var object map[string]interface{}
-
-	for rows.Next() {
-		columns := make([]interface{}, len(cols))
-		columnPointers := make([]interface{}, len(cols))
-		for i, _ := range columns {
-			columnPointers[i] = &columns[i]
-		}
-
-		if err := rows.Scan(columnPointers...); err != nil {
-			return nil, fmt.Errorf("failed to scan fields for USE tag")
-		}
-
-		object = make(map[string]interface{})
-		for i, colName := range cols {
-			val := columnPointers[i].(*interface{})
-			object[colName] = *val
-		}
-	}
-
-	err = rec(rootUse, object, conn)
-	if err != nil {
-		return nil, err
-	}
-
-	return docTree.WriteToBytes()
-}
-
-func rec(rootElem *etree.Element, object map[string]interface{}, conn *sqlx.DB) error {
+func recursiveParse(rootElem *etree.Element, object map[string]interface{}, conn *sqlx.DB) error {
 	for _, elem := range rootElem.ChildElements() {
 		if elem.Tag == "text" {
 			fieldName := elem.SelectAttr("field")
 			if fieldName == nil {
 				return fmt.Errorf("no field attr in TEXT tag")
 			}
-			value := object[strings.ToUpper(fieldName.Value)]
+
+			value, ok := object[strings.ToUpper(fieldName.Value)]
 			textElem := elem.SelectElement("r").SelectElement("t")
-			if value != nil {
+
+			if ok {
 				sr := strings.NewReader(fmt.Sprintf("%v ", value))
 				tr := transform.NewReader(sr, charmap.Windows1251.NewDecoder())
 				buf, err := ioutil.ReadAll(tr)
+
 				if err != nil {
-					panic("encoding panic")
+					return fmt.Errorf("encoding error")
 				}
 
-				s := string(buf)
-
-				textElem.SetText(fmt.Sprintf("%s ", s))
-
-				//fmt.Printf("%v %v\n", fieldName.Value, s)
+				encodedString := string(buf)
+				textElem.SetText(fmt.Sprintf("%s ", encodedString))
 			} else {
-				elem.SetText("")
-				//fmt.Printf("%v %v\n", fieldName.Value, value)
+				textElem.SetText("")
 			}
 
 			return nil
@@ -195,7 +185,7 @@ func rec(rootElem *etree.Element, object map[string]interface{}, conn *sqlx.DB) 
 				}
 			}
 
-			err = rec(elem, newObject, conn)
+			err = recursiveParse(elem, newObject, conn)
 			if err != nil {
 				return err
 			}
@@ -240,9 +230,9 @@ func rec(rootElem *etree.Element, object map[string]interface{}, conn *sqlx.DB) 
 				if counter > 0 {
 					copyTag := elem.Copy()
 					elem.Parent().AddChild(copyTag)
-					err = rec(copyTag, newObject, conn)
+					err = recursiveParse(copyTag, newObject, conn)
 				} else {
-					err = rec(elem, newObject, conn)
+					err = recursiveParse(elem, newObject, conn)
 				}
 
 				if err != nil {
@@ -250,10 +240,8 @@ func rec(rootElem *etree.Element, object map[string]interface{}, conn *sqlx.DB) 
 				}
 				counter++
 			}
-
-			//fmt.Printf("%v\n\n%v\n\n", newObject, object["ID"])
 		} else {
-			err := rec(elem, object, conn)
+			err := recursiveParse(elem, object, conn)
 			if err != nil {
 				return err
 			}
@@ -262,91 +250,3 @@ func rec(rootElem *etree.Element, object map[string]interface{}, conn *sqlx.DB) 
 
 	return nil
 }
-
-//func Generate(docData []byte, recordID string) ([]byte, error) {
-//	docTree := etree.NewDocument()
-//
-//	if err := docTree.ReadFromBytes(docData); err != nil {
-//		return nil, ErrReadDocData
-//	}
-//
-//	rootUse := docTree.FindElement("//use")
-//	rootTableName := rootUse.SelectAttr("table").Value
-//	fmt.Printf("%s\n", rootTableName)
-//
-//	//for _, useElem := range rootUse.FindElements(".//use") {
-//	//	tableName := useElem.SelectAttr("table")
-//	//	if tableName != nil {
-//	//		fmt.Printf("USE table %s\n", tableName.Value)
-//	//	}
-//	//
-//	//	queryName := useElem.SelectAttr("query")
-//	//	if queryName != nil {
-//	//		fmt.Printf("USE query %s\n", queryName.Value)
-//	//	}
-//	//
-//	//	for _, elem := range useElem.FindElements(".//text") {
-//	//		fieldValue := elem.SelectAttr("field").Value
-//	//		//newText, err := api.GetUserField(fieldValue, recordID)
-//	//		//if err != nil {
-//	//		//	return nil, fmt.Errorf("failed to generate doc: %v", err)
-//	//		//}
-//	//		//
-//	//		//textElem.SetText(fmt.Sprintf("%s ", newText))
-//	//
-//	//		fmt.Printf("    %s\n", fieldValue)
-//	//	}
-//	//}
-//
-//	for _, listElem := range rootUse.FindElements(".//list") {
-//		tableName := listElem.SelectAttr("table")
-//		fkeyName := listElem.SelectAttr("fkey")
-//		if tableName != nil && fkeyName != nil {
-//			fmt.Printf("LIST table %s, fkey %s\n", tableName.Value, fkeyName.Value)
-//		}
-//
-//		for _, useElem := range listElem.FindElements(".//use") {
-//			tableName := useElem.SelectAttr("table")
-//			if tableName != nil {
-//				fmt.Printf("		USE table %s\n", tableName.Value)
-//			}
-//
-//			queryName := useElem.SelectAttr("query")
-//			if queryName != nil {
-//				fmt.Printf("		USE query %s\n", queryName.Value)
-//			}
-//
-//			for _, elem := range useElem.FindElements(".//text") {
-//				fieldValue := elem.SelectAttr("field").Value
-//				//newText, err := api.GetUserField(fieldValue, recordID)
-//				//if err != nil {
-//				//	return nil, fmt.Errorf("failed to generate doc: %v", err)
-//				//}
-//				//
-//				//textElem.SetText(fmt.Sprintf("%s ", newText))
-//
-//				fmt.Printf("    			%s\n", fieldValue)
-//			}
-//		}
-//	}
-//
-//	//for _, elem := range rootUse.FindElements("//text") {
-//	//	fieldValue := elem.SelectAttr("field").Value
-//	//	textElem := elem.SelectElement("r").SelectElement("t")
-//	//
-//	//	//newText, err := api.GetUserField(fieldValue, recordID)
-//	//	//if err != nil {
-//	//	//	return nil, fmt.Errorf("failed to generate doc: %v", err)
-//	//	//}
-//	//	//
-//	//	//textElem.SetText(fmt.Sprintf("%s ", newText))
-//	//
-//	//	fmt.Printf("%s | %v\n", fieldValue, textElem)
-//	//}
-//
-//	return docTree.WriteToBytes()
-//}
-//
-//func Parse(object map[string]interface{}) {
-//
-//}

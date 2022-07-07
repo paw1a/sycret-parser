@@ -164,7 +164,7 @@ type SycretAPIResponse struct {
 	ResultData        string `json:"resultdata"`
 }
 
-func GetDocument(documentUrl string) ([]byte, error) {
+func GetTemplateDoc(documentUrl string) ([]byte, error) {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}

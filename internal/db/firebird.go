@@ -1,8 +1,10 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	_ "github.com/nakagami/firebirdsql"
 	"log"
 )
 
@@ -23,4 +25,31 @@ func NewDB(dbConnection DBConnection) (*sqlx.DB, error) {
 	}
 
 	return db, err
+}
+
+func ScanSelectRows(rows *sql.Rows) ([]map[string]interface{}, error) {
+	objectArray := make([]map[string]interface{}, 10)
+	cols, _ := rows.Columns()
+
+	for rows.Next() {
+		columns := make([]interface{}, len(cols))
+		columnPointers := make([]interface{}, len(cols))
+		for i, _ := range columns {
+			columnPointers[i] = &columns[i]
+		}
+
+		if err := rows.Scan(columnPointers...); err != nil {
+			return nil, fmt.Errorf("failed to scan rows: %v", err)
+		}
+
+		object := make(map[string]interface{})
+		for i, colName := range cols {
+			val := columnPointers[i].(*interface{})
+			object[colName] = *val
+		}
+
+		objectArray = append(objectArray, object)
+	}
+
+	return objectArray, nil
 }

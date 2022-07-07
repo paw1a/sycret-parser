@@ -104,7 +104,7 @@ func postFile(filename string, targetUrl string) error {
 	bodyWriter := multipart.NewWriter(bodyBuf)
 
 	// this step is very important
-	fileWriter, err := bodyWriter.CreateFormFile("uploadfile", filename)
+	w, err := bodyWriter.CreateFormFile("uploadfile", filename)
 	if err != nil {
 		fmt.Println("error writing to buffer")
 		return err
@@ -119,24 +119,32 @@ func postFile(filename string, targetUrl string) error {
 	defer fh.Close()
 
 	//iocopy
-	_, err = io.Copy(fileWriter, fh)
+	_, err = io.Copy(w, fh)
 	if err != nil {
 		return err
 	}
 
-	contentType := bodyWriter.FormDataContentType()
 	bodyWriter.Close()
 
-	resp, err := http.Post(targetUrl, contentType, bodyBuf)
+	req, err := http.NewRequest("POST", targetUrl, bodyBuf)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	resp_body, err := ioutil.ReadAll(resp.Body)
+	req.Header.Add("Content-Type", bodyWriter.FormDataContentType())
+	req.Header.Add("User-Agent", "sycret handler user")
+
+	client := &http.Client{}
+	res, err := client.Do(req)
 	if err != nil {
 		return err
 	}
-	fmt.Println(resp.Status)
+	defer res.Body.Close()
+
+	resp_body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+	fmt.Println(res.Status)
 	fmt.Println(string(resp_body))
 	return nil
 }
