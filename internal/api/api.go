@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/paw1a/sycret-parser/internal/db"
 	"io/ioutil"
@@ -68,14 +69,12 @@ func CheckAPIKey(apiKey string) error {
 		return ErrJsonUnmarshaling
 	}
 
-	if checkApiKeyResponse.Result != SuccessResult {
-		return fmt.Errorf("failed response with description: %s",
-			checkApiKeyResponse.ResultDescription)
+	if checkApiKeyResponse.Result != 0 {
+		return errors.New(checkApiKeyResponse.ResultDescription)
 	}
 
 	if checkApiKeyResponse.Data[0].Result != "0" {
-		return fmt.Errorf("invalid api key, response description: %s",
-			checkApiKeyResponse.ResultDescription)
+		return errors.New(checkApiKeyResponse.Data[0].ResultDescription)
 	}
 
 	return nil
@@ -137,14 +136,13 @@ func GetDBConnection(apiKey string) (db.DBConnection, error) {
 		return db.DBConnection{}, ErrJsonUnmarshaling
 	}
 
-	if dbConnectionResponse.Result != SuccessResult {
+	if dbConnectionResponse.Result != 0 {
 		return db.DBConnection{}, fmt.Errorf("failed get connection string request with description: %s",
 			dbConnectionResponse.ResultDescription)
 	}
 
 	if dbConnectionResponse.Data[0].Result != "0" {
-		return db.DBConnection{}, fmt.Errorf("invalid db connection string, response description: %s",
-			dbConnectionResponse.ResultDescription)
+		return db.DBConnection{}, fmt.Errorf("%s", dbConnectionResponse.Data[0].ResultDescription)
 	}
 
 	return db.DBConnection{
@@ -190,13 +188,30 @@ func GetTemplateDoc(documentUrl string) ([]byte, error) {
 	return docData, nil
 }
 
-func GetUserField(fieldName string, recordID string) (string, error) {
-	apiRequest := SycretAPIRequest{
-		Text:     fieldName,
-		RecordID: recordID,
+type ClientIDRequest struct {
+	ExternalApiKey string `json:"ApiKey"`
+	MethodName     string `json:"MethodName"`
+	ApiKey         string `json:"ClAPIKey"`
+}
+
+type ClientIDResponse struct {
+	Data []struct {
+		ClientID          string `json:"CLCOMPANYID"`
+		Result            string `json:"RESULT"`
+		ResultDescription string `json:"RESULTDESCRIPTION"`
+	} `json:"data"`
+	Result            int    `json:"result"`
+	ResultDescription string `json:"resultdescription"`
+}
+
+func GetClientID(apiKey string) (string, error) {
+	clientIDRequest := ClientIDRequest{
+		ExternalApiKey: ExternalApiKey,
+		MethodName:     "MDBGetClCompanyId",
+		ApiKey:         apiKey,
 	}
 
-	requestData, err := json.Marshal(apiRequest)
+	requestData, err := json.Marshal(clientIDRequest)
 	if err != nil {
 		return "", ErrJsonMarshaling
 	}
@@ -222,16 +237,20 @@ func GetUserField(fieldName string, recordID string) (string, error) {
 		return "", ErrReadResponseBody
 	}
 
-	var apiResponse SycretAPIResponse
-	err = json.Unmarshal(responseData, &apiResponse)
+	var clientIDResponse ClientIDResponse
+	err = json.Unmarshal(responseData, &clientIDResponse)
 	if err != nil {
 		return "", ErrJsonUnmarshaling
 	}
 
-	if apiResponse.Result != SuccessResult {
-		return "", fmt.Errorf("invalid response with description: %s",
-			apiResponse.ResultDescription)
+	if clientIDResponse.Result != SuccessResult {
+		return "", fmt.Errorf("failed get client id with description: %s",
+			clientIDResponse.ResultDescription)
 	}
 
-	return apiResponse.ResultData, nil
+	if clientIDResponse.Data[0].Result != "0" {
+		return "", fmt.Errorf("%s", clientIDResponse.Data[0].ResultDescription)
+	}
+
+	return clientIDResponse.Data[0].ClientID, nil
 }

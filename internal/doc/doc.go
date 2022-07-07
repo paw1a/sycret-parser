@@ -11,6 +11,7 @@ import (
 	"golang.org/x/text/transform"
 	"io/ioutil"
 	"strings"
+	"time"
 )
 
 var (
@@ -62,6 +63,12 @@ func recursiveParse(rootElem *etree.Element, rootObject map[string]interface{}, 
 			}
 
 			value, ok := rootObject[strings.ToUpper(fieldName.Value)]
+
+			switch value.(type) {
+			case time.Time:
+				fmt.Printf("%v\n", value)
+			}
+
 			textElem := elem.SelectElement("r").SelectElement("t")
 
 			if ok {
@@ -152,7 +159,6 @@ func recursiveParse(rootElem *etree.Element, rootObject map[string]interface{}, 
 
 				counter++
 			}
-			fmt.Printf("%d\n", counter)
 
 			if counter == 0 {
 				rootElem.RemoveChild(elem)
