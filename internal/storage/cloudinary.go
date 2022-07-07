@@ -1,12 +1,7 @@
 package storage
 
 import (
-	"bytes"
-	"context"
 	"errors"
-	"github.com/cloudinary/cloudinary-go"
-	"github.com/cloudinary/cloudinary-go/api/uploader"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -19,24 +14,24 @@ var (
 )
 
 func UploadDocument(docData []byte, filename string) (string, error) {
-	var cld, err = cloudinary.NewFromParams(viper.GetString("cloud_name"),
-		viper.GetString("cloud_key"), viper.GetString("cloud_secret"))
-	if err != nil {
-		return "", ErrInitCloud
-	}
+	//var cld, err = cloudinary.NewFromParams(viper.GetString("cloud_name"),
+	//	viper.GetString("cloud_key"), viper.GetString("cloud_secret"))
+	//if err != nil {
+	//	return "", ErrInitCloud
+	//}
+	//
+	//var ctx = context.Background()
+	//
+	//uploadResult, err := cld.Upload.Upload(
+	//	ctx,
+	//	bytes.NewBuffer(docData),
+	//	uploader.UploadParams{
+	//		PublicID: filename,
+	//		Folder:   FolderName,
+	//	})
+	//if err != nil {
+	//	return "", ErrUploadFile
+	//}
 
-	var ctx = context.Background()
-
-	uploadResult, err := cld.Upload.Upload(
-		ctx,
-		bytes.NewBuffer(docData),
-		uploader.UploadParams{
-			PublicID: filename,
-			Folder:   FolderName,
-		})
-	if err != nil {
-		return "", ErrUploadFile
-	}
-
-	return uploadResult.URL, nil
+	return "url.doc", nil
 }

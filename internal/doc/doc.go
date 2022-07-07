@@ -37,20 +37,12 @@ func GenerateDoc(docData []byte, recordID string, conn *sqlx.DB) ([]byte, error)
 
 	rows, err := conn.Query(queryString, recordID)
 	if err != nil {
-		return nil, err
-	}
-
-	if err != nil {
 		return nil, fmt.Errorf("failed select for root USE tag")
 	}
 
 	objects, err := db.ScanSelectRows(rows)
 	if err != nil {
-		return nil, fmt.Errorf("root USE tag: %v", err)
-	}
-
-	if len(objects) > 1 {
-		return nil, fmt.Errorf("multiple root use tags")
+		return nil, fmt.Errorf("root USE tag scan: %v", err)
 	}
 
 	err = recursiveParse(rootUse, objects[0], conn)
@@ -59,6 +51,121 @@ func GenerateDoc(docData []byte, recordID string, conn *sqlx.DB) ([]byte, error)
 	}
 
 	return docTree.WriteToBytes()
+}
+
+func recursiveParse(rootElem *etree.Element, rootObject map[string]interface{}, conn *sqlx.DB) error {
+	for _, elem := range rootElem.ChildElements() {
+		if elem.Tag == "text" {
+			fieldName := elem.SelectAttr("field")
+			if fieldName == nil {
+				return fmt.Errorf("no field attr in TEXT tag")
+			}
+
+			value, ok := rootObject[strings.ToUpper(fieldName.Value)]
+			textElem := elem.SelectElement("r").SelectElement("t")
+
+			if ok {
+				sr := strings.NewReader(fmt.Sprintf("%v ", value))
+				tr := transform.NewReader(sr, charmap.Windows1251.NewDecoder())
+				buf, err := ioutil.ReadAll(tr)
+
+				if err != nil {
+					return fmt.Errorf("encoding error")
+				}
+
+				encodedString := string(buf)
+				textElem.SetText(fmt.Sprintf("%s ", encodedString))
+			} else {
+				textElem.SetText("")
+			}
+
+			return nil
+		} else if elem.Tag == "use" {
+			table := elem.SelectAttr("table")
+			query := elem.SelectAttr("query")
+
+			if table == nil && query == nil {
+				return fmt.Errorf("no table and query attr in USE tag")
+			}
+
+			var queryString string
+			var rows *sql.Rows
+			var err error
+
+			if table != nil {
+				idName := strings.ToUpper(table.Value) + "ID"
+				queryString = fmt.Sprintf("select * from %s where id=?", table.Value)
+				rows, err = conn.Query(queryString, rootObject[idName])
+			}
+
+			if query != nil {
+				queryString = query.Value
+				rows, err = conn.Query(queryString)
+			}
+
+			if err != nil {
+				return fmt.Errorf("failed '%s' for USE tag", queryString)
+			}
+
+			objects, err := db.ScanSelectRows(rows)
+			if err != nil {
+				return fmt.Errorf("USE tag scan: %v", err)
+			}
+
+			err = recursiveParse(elem, objects[0], conn)
+			if err != nil {
+				return err
+			}
+		} else if elem.Tag == "list" {
+			table := elem.SelectAttr("table")
+			fkey := elem.SelectAttr("fkey")
+
+			if table == nil || fkey == nil {
+				return fmt.Errorf("no table or fkey attr in LIST tag")
+			}
+
+			queryString := fmt.Sprintf("select * from %s where %s=?", table.Value, fkey.Value)
+
+			rows, err := conn.Query(queryString, rootObject["ID"])
+			if err != nil {
+				return fmt.Errorf("failed '%s' for USE tag", queryString)
+			}
+
+			objects, err := db.ScanSelectRows(rows)
+			if err != nil {
+				return fmt.Errorf("LIST tag scan: %v", err)
+			}
+
+			var counter int
+			for _, object := range objects {
+				if counter > 0 {
+					copyTag := elem.Copy()
+					elem.Parent().AddChild(copyTag)
+					err = recursiveParse(copyTag, object, conn)
+				} else {
+					err = recursiveParse(elem, object, conn)
+				}
+
+				if err != nil {
+					return err
+				}
+
+				counter++
+			}
+			fmt.Printf("%d\n", counter)
+
+			if counter == 0 {
+				rootElem.RemoveChild(elem)
+			}
+		} else {
+			err := recursiveParse(elem, rootObject, conn)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 //func GenerateDoc(docData []byte, recordID string, conn *sqlx.DB) ([]byte, error) {
@@ -108,145 +215,3 @@ func GenerateDoc(docData []byte, recordID string, conn *sqlx.DB) ([]byte, error)
 //		rec(elem, n+1)
 //	}
 //}
-
-func recursiveParse(rootElem *etree.Element, object map[string]interface{}, conn *sqlx.DB) error {
-	for _, elem := range rootElem.ChildElements() {
-		if elem.Tag == "text" {
-			fieldName := elem.SelectAttr("field")
-			if fieldName == nil {
-				return fmt.Errorf("no field attr in TEXT tag")
-			}
-
-			value, ok := object[strings.ToUpper(fieldName.Value)]
-			textElem := elem.SelectElement("r").SelectElement("t")
-
-			if ok {
-				sr := strings.NewReader(fmt.Sprintf("%v ", value))
-				tr := transform.NewReader(sr, charmap.Windows1251.NewDecoder())
-				buf, err := ioutil.ReadAll(tr)
-
-				if err != nil {
-					return fmt.Errorf("encoding error")
-				}
-
-				encodedString := string(buf)
-				textElem.SetText(fmt.Sprintf("%s ", encodedString))
-			} else {
-				textElem.SetText("")
-			}
-
-			return nil
-		} else if elem.Tag == "use" {
-			table := elem.SelectAttr("table")
-			query := elem.SelectAttr("query")
-
-			if table == nil && query == nil {
-				return fmt.Errorf("no table and query attr in USE tag")
-			}
-
-			var rows *sql.Rows
-			var cols []string
-			var err error
-
-			if table != nil {
-				idName := strings.ToUpper(table.Value) + "ID"
-				queryString := fmt.Sprintf("select * from %s where id=?", table.Value)
-				rows, err = conn.Query(queryString, object[idName])
-			}
-
-			if query != nil {
-				queryString := query.Value
-				rows, err = conn.Query(queryString)
-			}
-
-			if err != nil {
-				return fmt.Errorf("failed select for USE tag")
-			}
-
-			cols, _ = rows.Columns()
-
-			var newObject map[string]interface{}
-
-			for rows.Next() {
-				columns := make([]interface{}, len(cols))
-				columnPointers := make([]interface{}, len(cols))
-				for i, _ := range columns {
-					columnPointers[i] = &columns[i]
-				}
-
-				if err := rows.Scan(columnPointers...); err != nil {
-					return fmt.Errorf("failed to scan fields for USE tag")
-				}
-
-				newObject = make(map[string]interface{})
-				for i, colName := range cols {
-					val := columnPointers[i].(*interface{})
-					newObject[colName] = *val
-				}
-			}
-
-			err = recursiveParse(elem, newObject, conn)
-			if err != nil {
-				return err
-			}
-		} else if elem.Tag == "list" {
-			table := elem.SelectAttr("table")
-			fkey := elem.SelectAttr("fkey")
-
-			if table == nil || fkey == nil {
-				return fmt.Errorf("no table or fkey attr in LIST tag")
-			}
-
-			queryString := fmt.Sprintf("select * from %s where %s=?", table.Value, fkey.Value)
-			rows, err := conn.Query(queryString, object["ID"])
-			cols, _ := rows.Columns()
-
-			if err != nil {
-				return fmt.Errorf("failed select for LIST tag")
-			}
-
-			var newObject map[string]interface{}
-
-			var counter int
-			for rows.Next() {
-				columns := make([]interface{}, len(cols))
-				columnPointers := make([]interface{}, len(cols))
-				for i, _ := range columns {
-					columnPointers[i] = &columns[i]
-				}
-
-				if err := rows.Scan(columnPointers...); err != nil {
-					return fmt.Errorf("failed to scan fields for LIST tag")
-				}
-
-				newObject = make(map[string]interface{})
-				for i, colName := range cols {
-					val := columnPointers[i].(*interface{})
-					newObject[colName] = *val
-				}
-
-				fmt.Printf("%v\n", newObject)
-
-				if counter > 0 {
-					copyTag := elem.Copy()
-					elem.Parent().AddChild(copyTag)
-					err = recursiveParse(copyTag, newObject, conn)
-				} else {
-					err = recursiveParse(elem, newObject, conn)
-				}
-
-				if err != nil {
-					return err
-				}
-				counter++
-			}
-		} else {
-			err := recursiveParse(elem, object, conn)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}

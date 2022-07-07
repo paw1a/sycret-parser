@@ -10,6 +10,7 @@ import (
 	"github.com/paw1a/sycret-parser/internal/storage"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -93,6 +94,9 @@ func DocEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	filename := fmt.Sprintf("%s filename.doc",
 		time.Now().Format("2006-01-02 15-04-05"))
+
+	file, _ := os.Create("result.doc")
+	file.Write(generatedDocData)
 
 	// Upload word doc to server
 	resultWordUrl, err := storage.UploadDocument(generatedDocData, filename)

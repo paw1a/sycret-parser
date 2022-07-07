@@ -28,7 +28,7 @@ func NewDB(dbConnection DBConnection) (*sqlx.DB, error) {
 }
 
 func ScanSelectRows(rows *sql.Rows) ([]map[string]interface{}, error) {
-	objectArray := make([]map[string]interface{}, 10)
+	objectArray := make([]map[string]interface{}, 0)
 	cols, _ := rows.Columns()
 
 	for rows.Next() {

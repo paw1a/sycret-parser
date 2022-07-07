@@ -50,8 +50,8 @@ func main() {
 		return
 	}
 
-	resultData, err := doc.Generate(docData, "54511712", conn)
-	//resultData, err := doc.Generate(docData, "387", conn)
+	//resultData, err := doc.GenerateDoc(docData, "54511712", conn)
+	resultData, err := doc.GenerateDoc(docData, "387", conn)
 	if err != nil {
 		fmt.Printf("%v\n", err)
 		os.Exit(10)
